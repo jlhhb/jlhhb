@@ -41,6 +41,16 @@ sudo -E apt-get install -y --no-install-recommends \
   xxd zlib1g-dev
 sudo -E apt-get clean
 
+# The base image defaults `cc`/`c++` to clang, but OpenWrt's host build expects
+# GCC (the CI runner uses GCC). clang fails to link -lstdc++ for host tools such
+# as elfutils, so pin the alternatives to GCC.
+if update-alternatives --list cc 2>/dev/null | grep -q '/usr/bin/gcc'; then
+  sudo update-alternatives --set cc /usr/bin/gcc
+fi
+if update-alternatives --list c++ 2>/dev/null | grep -q '/usr/bin/g++'; then
+  sudo update-alternatives --set c++ /usr/bin/g++
+fi
+
 echo "==> Preparing OpenWrt source tree at ${OPENWRT_DIR}"
 sudo mkdir -p "$(dirname "${OPENWRT_DIR}")"
 sudo chown "$(id -un)":"$(id -gn)" "$(dirname "${OPENWRT_DIR}")"
