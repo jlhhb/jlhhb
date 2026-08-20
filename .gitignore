@@ -1,0 +1,3 @@
+# OpenWrt buildroot symlink created by the Cloud Agent environment setup.
+# The actual source tree lives outside the git working tree (see .cursor/install.sh).
+/openwrt
