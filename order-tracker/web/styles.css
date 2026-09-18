@@ -78,7 +78,23 @@ pre {
   font-size: 12px;
 }
 h2 { margin: 0 0 12px; font-size: 18px; }
+.grid3 {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px 16px;
+}
+.grid3 label { font-weight: 650; }
+.grid3 select {
+  display: block;
+  width: 100%;
+  margin-top: 6px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 14px;
+  background: #fff;
+}
 @media (max-width: 720px) {
-  .stats { grid-template-columns: 1fr 1fr; }
+  .stats, .grid3 { grid-template-columns: 1fr; }
   header h1 { font-size: 26px; }
 }

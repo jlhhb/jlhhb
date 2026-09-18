@@ -28,9 +28,25 @@ python3 -m app
 
 浏览器打开 http://127.0.0.1:8787
 
+指定工作表、运单号列和运输公司列。查询顺序：
+
+1. 有免费开放接口则先调 API（目前 8DT / 永利八达通）
+2. 没有免费接口、接口失败、或出现人机验证时，走 AI 查询（读取官网页面；配置 `ORDER_TRACKER_AI_API_KEY` 时用大模型抽取状态）
+3. 结果在网页汇总，并写回你指定的状态列
+
+页面加载后请确认：
+
+- 工作表（例如 `新模板`）
+- 运单号列
+- 运输公司列
+- 状态列（没有就选表尾新增的「订单状态」）
+
 可选环境变量：
 
 - `CHROME_PATH` 系统 Chrome 路径，默认 `/usr/bin/google-chrome-stable`
+- `ORDER_TRACKER_AI_API_KEY` / `ORDER_TRACKER_AI_BASE_URL` / `ORDER_TRACKER_AI_MODEL` 用于 AI 抽取
+
+人机验证码无法自动解开，会标记为「人机验证」。金山文档个人账号无法直接改在线文件，请下载更新表后导入覆盖。
 
 ## 测试
 

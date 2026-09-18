@@ -11,7 +11,7 @@
     <header>
       <p class="eyebrow">发货清单</p>
       <h1>未到货订单跟踪</h1>
-      <p class="lead">粘贴金山文档分享链接。工具只查询状态不是「签收」的行，用承运商固定接口刷新轨迹，并生成可导回表格的 xlsx。</p>
+      <p class="lead">指定工作表、运单号列和运输公司列。先走免费 API；没有接口、被拦或出现人机验证时，再用 AI 查。结果汇总在本页，并写回状态列。</p>
     </header>
 
     <section class="card">
@@ -23,9 +23,30 @@
       </div>
       <div class="row minor">
         <label class="file">或上传 xlsx <input id="file" type="file" accept=".xlsx,.xlsm" /></label>
-        <label class="check"><input id="useBrowser" type="checkbox" checked /> 用浏览器查 USPS/UPS/FedEx 等官网</label>
       </div>
-      <p class="hint">金山文档个人账号无法用官方接口写回。查询完成后下载更新表，再在金山文档里导入覆盖即可。已签收的行不会重查。</p>
+    </section>
+
+    <section class="card hidden" id="mapCard">
+      <h2>列映射（按你的表格固定列）</h2>
+      <div class="grid3">
+        <label>工作表
+          <select id="sheetName"></select>
+        </label>
+        <label>运单号列
+          <select id="trackingCol"></select>
+        </label>
+        <label>运输公司列
+          <select id="carrierCol"></select>
+        </label>
+        <label>状态列（写回）
+          <select id="statusCol"></select>
+        </label>
+      </div>
+      <div class="row minor">
+        <label class="check"><input id="useAi" type="checkbox" checked /> 无免费 API / 人机验证时用 AI 查询</label>
+        <button id="bindBtn" type="button" class="ghost">按此列预览</button>
+      </div>
+      <p class="hint">当前金山文档个人账号无法直接改在线文件。查询后会写进下载表的状态列，并在本页展示汇总；把 xlsx 导入覆盖即可。</p>
     </section>
 
     <section id="summary" class="stats hidden"></section>

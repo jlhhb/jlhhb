@@ -29,7 +29,7 @@ def test_preview_file_and_refresh_without_browser(tmp_path):
     assert data["counts"]["delivered"] == 1
     job_id = data["job_id"]
 
-    async def fake_group(numbers, mapping=None, use_browser=True):
+    async def fake_group(numbers, mapping=None, **kwargs):
         out = {}
         for number in numbers:
             if number.startswith("EWS"):
@@ -53,7 +53,7 @@ def test_preview_file_and_refresh_without_browser(tmp_path):
         return out
 
     with patch("app.jobs.track_group", side_effect=fake_group):
-        asyncio.run(run_job(job_id, use_browser=False))
+        asyncio.run(run_job(job_id, use_ai=False))
 
     payload = client.get(f"/api/jobs/{job_id}").json()
     assert payload["status"] == "done"
@@ -68,3 +68,23 @@ def test_preview_file_and_refresh_without_browser(tmp_path):
     assert by_name["Archer Rosenkrantz"] == "未填单号"
     assert by_name["Anderson Werner"] == "签收"
     assert by_name["Brenda Vincent"] == "仅面单"
+
+
+def test_bind_explicit_columns(tmp_path):
+    client = TestClient(app)
+    xlsx = _sample(tmp_path / "s.xlsx")
+    with xlsx.open("rb") as handle:
+        res = client.post(
+            "/api/preview-file",
+            files={"file": ("s.xlsx", handle, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")},
+        )
+    job_id = res.json()["job_id"]
+    bound = client.post(
+        f"/api/jobs/{job_id}/bind",
+        json={"tracking_col": 3, "carrier_col": 2, "status_col": 4},
+    )
+    assert bound.status_code == 200
+    data = bound.json()
+    assert data["columns"]["tracking"] == 3
+    assert data["columns"]["carrier"] == 2
+    assert data["counts"]["pending"] == 2

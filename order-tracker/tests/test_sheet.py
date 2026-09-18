@@ -40,9 +40,30 @@ def test_export_template_missing_tracking(tmp_path: Path):
     wb.save(path)
     table = load_table(path)
     assert table.columns.tracking == 2
+    assert table.columns.carrier == 3
     assert table.pending_count == 0
     assert table.missing_count == 2
     assert {row.recipient for row in table.rows} == {"Diego Cea", "Elizabeth"}
+
+
+def test_explicit_columns_and_sheet(tmp_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "新模板"
+    ws.append(["参考号", "运单号", "渠道", "收件人"])
+    ws.append(["YT1", "EWSMM260824000268YQ", "8DT", "Axel"])
+    other = wb.create_sheet("Sheet1")
+    other.append(["A", "B"])
+    other.append(["x", "y"])
+    path = tmp_path / "multi.xlsx"
+    wb.save(path)
+    table = load_table(path, sheet_name="新模板", tracking_col=2, carrier_col=3)
+    assert table.sheet_name == "新模板"
+    assert table.columns.tracking == 2
+    assert table.columns.carrier == 3
+    assert table.pending_count == 1
+    assert table.rows[0].carrier_raw == "8DT"
+    assert table.rows[0].tracking_numbers == ["EWSMM260824000268YQ"]
 
 
 def test_apply_results_writes_status(tmp_path: Path):

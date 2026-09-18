@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import asyncio
+from pathlib import Path
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse
@@ -13,15 +12,27 @@ from . import jobs
 
 WEB_DIR = Path(__file__).resolve().parent.parent / "web"
 
-app = FastAPI(title="订单跟踪", version="0.1.0")
+app = FastAPI(title="订单跟踪", version="0.2.0")
 
 
 class PreviewBody(BaseModel):
     url: str = Field(..., min_length=8)
 
 
+class BindBody(BaseModel):
+    sheet_name: str | None = None
+    tracking_col: int | None = None
+    carrier_col: int | None = None
+    status_col: int | None = None
+
+
 class RefreshBody(BaseModel):
-    use_browser: bool = True
+    use_ai: bool = True
+    use_browser: bool | None = None
+    sheet_name: str | None = None
+    tracking_col: int | None = None
+    carrier_col: int | None = None
+    status_col: int | None = None
 
 
 @app.get("/api/health")
@@ -52,6 +63,23 @@ async def preview_file(file: UploadFile = File(...)) -> dict:
     return jobs.preview_payload(job)
 
 
+@app.post("/api/jobs/{job_id}/bind")
+def bind(job_id: str, body: BindBody) -> dict:
+    if job_id not in jobs.JOBS:
+        raise HTTPException(status_code=404, detail="任务不存在")
+    try:
+        jobs.bind_job(
+            job_id,
+            sheet_name=body.sheet_name,
+            tracking_col=body.tracking_col,
+            carrier_col=body.carrier_col,
+            status_col=body.status_col,
+        )
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return jobs.preview_payload(jobs.JOBS[job_id])
+
+
 @app.get("/api/jobs/{job_id}")
 def job_status(job_id: str) -> dict:
     job = jobs.JOBS.get(job_id)
@@ -67,9 +95,21 @@ async def refresh(job_id: str, body: RefreshBody | None = None) -> dict:
         raise HTTPException(status_code=404, detail="任务不存在")
     if job.status == "running":
         return jobs.preview_payload(job)
-    use_browser = True if body is None else body.use_browser
+    payload = body or RefreshBody()
+    if any(
+        value is not None
+        for value in (payload.sheet_name, payload.tracking_col, payload.carrier_col, payload.status_col)
+    ):
+        jobs.bind_job(
+            job_id,
+            sheet_name=payload.sheet_name,
+            tracking_col=payload.tracking_col,
+            carrier_col=payload.carrier_col,
+            status_col=payload.status_col,
+        )
+    use_ai = payload.use_ai if payload.use_browser is None else payload.use_browser
     job.status = "running"
-    asyncio.create_task(jobs.run_job(job_id, use_browser=use_browser))
+    asyncio.create_task(jobs.run_job(job_id, use_ai=use_ai))
     return jobs.preview_payload(job)
 
 

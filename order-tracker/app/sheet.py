@@ -10,6 +10,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from openpyxl import load_workbook
+from openpyxl.utils import get_column_letter
 from openpyxl.workbook import Workbook
 from openpyxl.worksheet.worksheet import Worksheet
 
@@ -72,6 +73,7 @@ class ColumnMap:
     latest: int
     queried_at: int
     recipient_from: int | None
+    sheet_name: str = ""
 
 
 @dataclass
@@ -83,6 +85,7 @@ class SheetTable:
     delivered_count: int
     pending_count: int
     missing_count: int
+    sheet_name: str = ""
 
 
 def _cell_text(value: Any) -> str:
@@ -141,7 +144,7 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
 
     carrier_col = None
     for idx, header in enumerate(headers, start=1):
-        if any(key in header for key in ("carrier", "承运", "物流公司", "快递公司")):
+        if any(key in header for key in ("carrier", "承运", "物流公司", "快递公司", "运输公司", "渠道")):
             carrier_col = idx
             break
     if carrier_col is None and tracking_col > 1:
@@ -160,7 +163,7 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
             break
     if status_col is None:
         probe = tracking_col + 1
-        if probe <= max_col:
+        if probe <= max_col and probe != carrier_col:
             hits = 0
             for row in range(2, min(ws.max_row + 1, 40)):
                 if _looks_like_status(_cell_text(ws.cell(row, probe).value)):
@@ -168,9 +171,8 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
             if hits:
                 status_col = probe
         if status_col is None:
-            status_col = min(tracking_col + 1, max(max_col, tracking_col + 1))
-            if status_col > max_col:
-                status_col = tracking_col + 1
+            # 没有状态列时追加在表尾，避免覆盖「渠道/地址」
+            status_col = max_col + 1
 
     address_col = None
     notes_col = None
@@ -204,6 +206,28 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
     )
 
 
+def list_sheets(path: Path) -> list[dict]:
+    wb = load_workbook(path, data_only=True)
+    active = wb.active.title if wb.active is not None else ""
+    items = []
+    for name in wb.sheetnames:
+        if name.startswith("WpsReserved"):
+            continue
+        ws = wb[name]
+        max_col = ws.max_column or 1
+        headers = []
+        for col in range(1, max_col + 1):
+            headers.append(
+                {
+                    "index": col,
+                    "letter": get_column_letter(col),
+                    "title": _header_name(ws.cell(1, col).value, col),
+                }
+            )
+        items.append({"name": name, "active": name == active, "headers": headers})
+    return items
+
+
 def _recipient_from(address: str) -> str:
     for line in (address or "").splitlines():
         name = line.strip().strip('"')
@@ -212,17 +236,56 @@ def _recipient_from(address: str) -> str:
     return ""
 
 
-def load_table(path: Path) -> SheetTable:
-    wb = load_workbook(path)
-    ws = wb.active
-    columns = detect_columns(ws)
+def _numbers_from_cell(tracking_raw: str) -> list[str]:
+    token = tracking_raw.replace("\n", " ").strip()
+    if token.startswith("="):
+        return []
+    numbers = extract_tracking_numbers(tracking_raw)
+    if numbers:
+        return numbers
+    if token:
+        return [token]
+    return []
+
+
+def load_table(
+    path: Path,
+    sheet_name: str | None = None,
+    tracking_col: int | None = None,
+    carrier_col: int | None = None,
+    status_col: int | None = None,
+) -> SheetTable:
+    wb = load_workbook(path, data_only=True)
+    if sheet_name:
+        if sheet_name not in wb.sheetnames:
+            raise ValueError(f"找不到工作表：{sheet_name}")
+        ws = wb[sheet_name]
+    else:
+        ws = wb.active
+    detected = detect_columns(ws)
+    columns = ColumnMap(
+        carrier=carrier_col if carrier_col is not None else detected.carrier,
+        tracking=tracking_col if tracking_col is not None else detected.tracking,
+        status=status_col if status_col is not None else detected.status,
+        address=detected.address,
+        notes=detected.notes,
+        latest=detected.latest,
+        queried_at=detected.queried_at,
+        recipient_from=detected.recipient_from,
+        sheet_name=ws.title,
+    )
+    if columns.latest <= max(columns.tracking, columns.status, columns.carrier or 0):
+        columns.latest = max(columns.tracking, columns.status, columns.carrier or 0, ws.max_column or 1) + 1
+        columns.queried_at = columns.latest + 1
     headers = [_header_name(ws.cell(1, c).value, c) for c in range(1, (ws.max_column or 1) + 1)]
     rows: list[SheetRow] = []
     delivered = pending = missing = 0
     for excel_row in range(2, (ws.max_row or 1) + 1):
         tracking_raw = _cell_text(ws.cell(excel_row, columns.tracking).value)
         carrier_raw = _cell_text(ws.cell(excel_row, columns.carrier).value) if columns.carrier else ""
-        status_raw = _cell_text(ws.cell(excel_row, columns.status).value)
+        if carrier_raw.startswith("="):
+            carrier_raw = ""
+        status_raw = _cell_text(ws.cell(excel_row, columns.status).value) if columns.status <= (ws.max_column or 1) else ""
         address = _cell_text(ws.cell(excel_row, columns.address).value) if columns.address else ""
         notes = _cell_text(ws.cell(excel_row, columns.notes).value) if columns.notes else ""
         recipient = ""
@@ -230,8 +293,8 @@ def load_table(path: Path) -> SheetTable:
             recipient = _recipient_from(_cell_text(ws.cell(excel_row, columns.recipient_from).value))
         if not recipient:
             recipient = _recipient_from(address)
-        numbers = extract_tracking_numbers(tracking_raw)
-        if not any([tracking_raw, carrier_raw, address, notes]):
+        numbers = _numbers_from_cell(tracking_raw)
+        if not any([tracking_raw, carrier_raw, address, notes, recipient]):
             continue
         skip_reason = None
         if not numbers:
@@ -263,6 +326,7 @@ def load_table(path: Path) -> SheetTable:
         delivered_count=delivered,
         pending_count=pending,
         missing_count=missing,
+        sheet_name=ws.title,
     )
 
 
@@ -270,24 +334,26 @@ def apply_results(
     source: Path,
     dest: Path,
     updates: dict[int, dict[str, str]],
+    columns: ColumnMap | None = None,
+    sheet_name: str | None = None,
 ) -> Path:
     wb: Workbook = load_workbook(source)
-    ws = wb.active
-    columns = detect_columns(ws)
-    if not _cell_text(ws.cell(1, columns.status).value):
-        ws.cell(1, columns.status).value = "订单状态"
-    if columns.latest > (ws.max_column or 1) or not _cell_text(ws.cell(1, columns.latest).value):
-        ws.cell(1, columns.latest).value = "最新轨迹"
-    if columns.queried_at > (ws.max_column or 1) or not _cell_text(ws.cell(1, columns.queried_at).value):
-        ws.cell(1, columns.queried_at).value = "查询时间"
+    ws = wb[sheet_name] if sheet_name and sheet_name in wb.sheetnames else wb.active
+    mapping = columns or detect_columns(ws)
+    if not _cell_text(ws.cell(1, mapping.status).value):
+        ws.cell(1, mapping.status).value = "订单状态"
+    if mapping.latest > (ws.max_column or 1) or not _cell_text(ws.cell(1, mapping.latest).value):
+        ws.cell(1, mapping.latest).value = "最新轨迹"
+    if mapping.queried_at > (ws.max_column or 1) or not _cell_text(ws.cell(1, mapping.queried_at).value):
+        ws.cell(1, mapping.queried_at).value = "查询时间"
 
     now = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d %H:%M")
     for excel_row, payload in updates.items():
         if payload.get("status"):
-            ws.cell(excel_row, columns.status).value = payload["status"]
+            ws.cell(excel_row, mapping.status).value = payload["status"]
         if payload.get("latest"):
-            ws.cell(excel_row, columns.latest).value = payload["latest"]
-        ws.cell(excel_row, columns.queried_at).value = payload.get("queried_at") or now
+            ws.cell(excel_row, mapping.latest).value = payload["latest"]
+        ws.cell(excel_row, mapping.queried_at).value = payload.get("queried_at") or now
     dest.parent.mkdir(parents=True, exist_ok=True)
     wb.save(dest)
     return dest

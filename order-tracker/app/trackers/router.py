@@ -1,11 +1,11 @@
-"""根据单号形态和表格承运商列选择适配器。"""
+"""查询链路：先免费 API，没有接口或失败/人机验证再走 AI。"""
 
 from __future__ import annotations
 
 import re
 
 from . import eight_dt
-from .browser import track_on_site
+from .ai import track_with_ai
 from .models import TrackResult
 
 EIGHT_DT_RE = re.compile(r"^EWS[A-Z0-9]+YQ$", re.I)
@@ -24,6 +24,7 @@ SHEET_CARRIER = {
     "canadapost": "canada_post",
     "dpd": "dpd",
     "8dt": "8dt",
+    "永利": "8dt",
     "tgx": "tgx",
     "team global": "tgx",
 }
@@ -32,6 +33,12 @@ SHEET_CARRIER = {
 def normalize_carrier(number: str, sheet_carrier: str = "") -> str:
     token = (number or "").strip()
     hinted = SHEET_CARRIER.get((sheet_carrier or "").strip().lower())
+    if not hinted and sheet_carrier:
+        lowered = sheet_carrier.strip().lower()
+        for key, value in SHEET_CARRIER.items():
+            if key in lowered:
+                hinted = value
+                break
     if EIGHT_DT_RE.match(token):
         return "8dt"
     if UPS_RE.match(token):
@@ -44,49 +51,58 @@ def normalize_carrier(number: str, sheet_carrier: str = "") -> str:
         return "dpd"
     if TGX_RE.match(token):
         return "tgx"
-    if hinted == "canada_post" or (CANADA_RE.match(token) and hinted != "fedex"):
-        if hinted == "canada_post" or (CANADA_RE.match(token) and not hinted):
-            return "canada_post"
+    if hinted == "canada_post" or (CANADA_RE.match(token) and not hinted):
+        return "canada_post"
     return hinted or "aftership"
 
 
-async def track_one(number: str, sheet_carrier: str = "", use_browser: bool = True) -> TrackResult:
+async def try_free_api(number: str, sheet_carrier: str = "") -> TrackResult | None:
     carrier = normalize_carrier(number, sheet_carrier)
     if carrier == "8dt":
         batch = await eight_dt.track_many([number])
         return batch[number]
-    if carrier == "dpd":
-        # 8412 多为国内专线号，末端 DPD 经常查无，仍走官网以便确认。
-        if not use_browser:
-            return TrackResult(
-                number=number,
-                carrier="dpd",
-                code="not_found",
-                status_text="官网查无",
-                latest="DPD 专线号通常不是末端查询号",
-                source="dpd-heuristic",
-            )
-        return await track_on_site("dpd", number)
-    if not use_browser:
-        return TrackResult(
+    return None
+
+
+def _api_success(result: TrackResult | None) -> bool:
+    if result is None:
+        return False
+    if not result.ok:
+        return False
+    if result.code in {"blocked", "unknown"}:
+        return False
+    if result.source.endswith("api"):
+        return True
+    return result.code not in {"not_found"} or bool(result.latest)
+
+
+async def track_one(number: str, sheet_carrier: str = "", use_ai: bool = True) -> TrackResult:
+    api_result = await try_free_api(number, sheet_carrier)
+    if _api_success(api_result):
+        return api_result  # type: ignore[return-value]
+    if not use_ai:
+        return api_result or TrackResult(
             number=number,
-            carrier=carrier,
+            carrier=normalize_carrier(number, sheet_carrier),
             code="unknown",
             status_text="未查询",
-            latest="已跳过浏览器查询",
+            latest="无免费 API，已跳过 AI",
             source="skipped",
             ok=False,
-            error="browser disabled",
+            error="ai disabled",
         )
-    site = carrier if carrier in {"usps", "ups", "fedex", "canada_post", "tgx"} else "aftership"
-    return await track_on_site(site, number)
+    carrier = normalize_carrier(number, sheet_carrier)
+    return await track_with_ai(number, carrier)
 
 
 async def track_group(
     numbers: list[str],
     sheet_carrier_by_number: dict[str, str] | None = None,
-    use_browser: bool = True,
+    use_ai: bool = True,
+    use_browser: bool | None = None,
 ) -> dict[str, TrackResult]:
+    if use_browser is not None:
+        use_ai = use_browser
     mapping = sheet_carrier_by_number or {}
     unique = [n for n in dict.fromkeys(numbers) if n]
     results: dict[str, TrackResult] = {}
@@ -95,5 +111,5 @@ async def track_group(
     if eight:
         results.update(await eight_dt.track_many(eight))
     for number in rest:
-        results[number] = await track_one(number, mapping.get(number, ""), use_browser=use_browser)
+        results[number] = await track_one(number, mapping.get(number, ""), use_ai=use_ai)
     return results
