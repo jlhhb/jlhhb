@@ -1,0 +1,48 @@
+from pathlib import Path
+
+from openpyxl import Workbook
+
+from app.sheet import apply_results, load_table
+
+
+def _sample(path: Path) -> Path:
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["送货日期", "承运商", "Tracking No.", "状态", "Delivery Address", "Notes"])
+    ws.append(["", "USPS", "9214490422577138214308", "签收", "Anderson Werner\nUT", ""])
+    ws.append(["", "8DT", "EWSMM260824000268YQ", "", "Axel Medina\nMexico", ""])
+    ws.append(["", "UPS", "1Z1B0D750301336987", "", "Brenda Vincent\nLA", "海运"])
+    ws.append(["20260909", "", "", "", "Archer Rosenkrantz\nDenver", ""])
+    wb.save(path)
+    return path
+
+
+def test_load_and_filter(tmp_path: Path):
+    table = load_table(_sample(tmp_path / "s.xlsx"))
+    assert table.columns.tracking == 3
+    assert table.columns.carrier == 2
+    assert table.delivered_count == 1
+    assert table.pending_count == 2
+    assert table.missing_count == 1
+    pending = [row for row in table.rows if row.needs_query]
+    assert {row.recipient for row in pending} == {"Axel Medina", "Brenda Vincent"}
+    missing = [row for row in table.rows if row.skip_reason == "missing_tracking"]
+    assert missing[0].recipient == "Archer Rosenkrantz"
+
+
+def test_apply_results_writes_status(tmp_path: Path):
+    source = _sample(tmp_path / "s.xlsx")
+    dest = tmp_path / "out.xlsx"
+    apply_results(
+        source,
+        dest,
+        {
+            3: {"status": "签收", "latest": "墨西哥当地签收", "queried_at": "2026-09-18 15:00"},
+            5: {"status": "未填单号", "latest": "", "queried_at": "2026-09-18 15:00"},
+        },
+    )
+    table = load_table(dest)
+    by_row = {row.excel_row: row for row in table.rows}
+    assert by_row[3].status_raw == "签收"
+    assert by_row[5].status_raw == "未填单号"
+    assert by_row[2].status_raw == "签收"

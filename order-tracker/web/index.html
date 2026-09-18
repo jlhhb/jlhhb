@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>订单跟踪</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="wrap">
+    <header>
+      <p class="eyebrow">发货清单</p>
+      <h1>未到货订单跟踪</h1>
+      <p class="lead">粘贴金山文档分享链接。工具只查询状态不是「签收」的行，用承运商固定接口刷新轨迹，并生成可导回表格的 xlsx。</p>
+    </header>
+
+    <section class="card">
+      <label for="url">在线表格地址</label>
+      <div class="row">
+        <input id="url" type="url" placeholder="https://www.kdocs.cn/l/xxxxxx" value="https://www.kdocs.cn/l/ccWzub8j0jIm" />
+        <button id="loadBtn" type="button">读取表格</button>
+      </div>
+      <div class="row minor">
+        <label class="file">或上传 xlsx <input id="file" type="file" accept=".xlsx,.xlsm" /></label>
+        <label class="check"><input id="useBrowser" type="checkbox" checked /> 用浏览器查 USPS/UPS/FedEx 等官网</label>
+      </div>
+      <p class="hint">金山文档个人账号无法用官方接口写回。查询完成后下载更新表，再在金山文档里导入覆盖即可。已签收的行不会重查。</p>
+    </section>
+
+    <section id="summary" class="stats hidden"></section>
+
+    <section class="actions hidden" id="actions">
+      <button id="runBtn" type="button">刷新未到货</button>
+      <a id="downloadBtn" class="btn ghost hidden" href="#">下载更新表</a>
+      <p id="progress" class="progress"></p>
+    </section>
+
+    <section class="card hidden" id="pendingCard">
+      <h2>将查询的未到货订单</h2>
+      <div class="table-wrap"><table id="pendingTable"></table></div>
+    </section>
+
+    <section class="card hidden" id="resultCard">
+      <h2>查询结果</h2>
+      <div class="table-wrap"><table id="resultTable"></table></div>
+    </section>
+
+    <section class="card hidden" id="logCard">
+      <h2>日志</h2>
+      <pre id="logs"></pre>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
