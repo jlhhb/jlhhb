@@ -176,8 +176,11 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
     notes_col = None
     latest_col = None
     queried_col = None
+    recipient_col = None
     for idx, header in enumerate(headers, start=1):
-        if address_col is None and any(key in header for key in ("address", "地址", "收件")):
+        if recipient_col is None and any(key in header for key in ("收件人", "recipient", "consignee")):
+            recipient_col = idx
+        if address_col is None and any(key in header for key in ("address", "地址")) and "收件人" not in header:
             address_col = idx
         if notes_col is None and any(key in header for key in ("note", "备注", "notes")):
             notes_col = idx
@@ -197,7 +200,7 @@ def detect_columns(ws: Worksheet) -> ColumnMap:
         notes=notes_col,
         latest=latest_col,
         queried_at=queried_col,
-        recipient_from=address_col,
+        recipient_from=recipient_col or address_col,
     )
 
 
@@ -222,6 +225,11 @@ def load_table(path: Path) -> SheetTable:
         status_raw = _cell_text(ws.cell(excel_row, columns.status).value)
         address = _cell_text(ws.cell(excel_row, columns.address).value) if columns.address else ""
         notes = _cell_text(ws.cell(excel_row, columns.notes).value) if columns.notes else ""
+        recipient = ""
+        if columns.recipient_from:
+            recipient = _recipient_from(_cell_text(ws.cell(excel_row, columns.recipient_from).value))
+        if not recipient:
+            recipient = _recipient_from(address)
         numbers = extract_tracking_numbers(tracking_raw)
         if not any([tracking_raw, carrier_raw, address, notes]):
             continue
@@ -237,7 +245,7 @@ def load_table(path: Path) -> SheetTable:
         rows.append(
             SheetRow(
                 excel_row=excel_row,
-                recipient=_recipient_from(address),
+                recipient=recipient,
                 carrier_raw=carrier_raw,
                 tracking_raw=tracking_raw,
                 tracking_numbers=numbers,

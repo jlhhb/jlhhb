@@ -37,10 +37,12 @@ function applyJob(data) {
   $("actions").classList.remove("hidden");
   $("pendingCard").classList.remove("hidden");
   $("logCard").classList.remove("hidden");
+  const pendingRows = data.pending.map((row) => [row.excel_row, row.recipient, row.carrier, row.tracking, row.status]);
+  const missingRows = (data.missing || []).map((row) => [row.excel_row, row.recipient, "", "", "未填单号"]);
   renderTable(
     $("pendingTable"),
     ["行", "收件人", "承运商", "运单号", "当前状态"],
-    data.pending.map((row) => [row.excel_row, row.recipient, row.carrier, row.tracking, row.status])
+    pendingRows.concat(missingRows)
   );
   $("logs").textContent = (data.logs || []).join("\n");
   $("progress").textContent = data.status === "running"
@@ -107,6 +109,24 @@ $("loadBtn").addEventListener("click", async () => {
     alert(err.message || err);
   } finally {
     setBusy($("loadBtn"), false, "读取表格");
+  }
+});
+
+$("demoBtn").addEventListener("click", async () => {
+  setBusy($("demoBtn"), true, "加载中…");
+  try {
+    const fileRes = await fetch("/demo.xlsx");
+    if (!fileRes.ok) throw new Error("示例表不存在");
+    const blob = await fileRes.blob();
+    const body = new FormData();
+    body.append("file", blob, "demo.xlsx");
+    const res = await fetch("/api/preview-file", { method: "POST", body });
+    if (!res.ok) throw new Error(await readError(res));
+    applyJob(await res.json());
+  } catch (err) {
+    alert(err.message || err);
+  } finally {
+    setBusy($("demoBtn"), false, "加载示例表");
   }
 });
 

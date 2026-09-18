@@ -30,6 +30,21 @@ def test_load_and_filter(tmp_path: Path):
     assert missing[0].recipient == "Archer Rosenkrantz"
 
 
+def test_export_template_missing_tracking(tmp_path: Path):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["参考号", "运单号", "渠道", "收件人", "收件地址"])
+    ws.append(["YT091701", None, None, None, "Diego Cea\nFillmore, CA"])
+    ws.append(["YT091705", None, None, "Elizabeth", "Hilliard, OH"])
+    path = tmp_path / "export.xlsx"
+    wb.save(path)
+    table = load_table(path)
+    assert table.columns.tracking == 2
+    assert table.pending_count == 0
+    assert table.missing_count == 2
+    assert {row.recipient for row in table.rows} == {"Diego Cea", "Elizabeth"}
+
+
 def test_apply_results_writes_status(tmp_path: Path):
     source = _sample(tmp_path / "s.xlsx")
     dest = tmp_path / "out.xlsx"

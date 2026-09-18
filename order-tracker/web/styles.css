@@ -53,6 +53,7 @@ button, .btn {
   text-decoration: none;
   display: inline-block;
 }
+button.ghost, .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 button:disabled { opacity: 0.55; cursor: wait; }
 .btn.ghost { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
 .minor { margin-top: 12px; gap: 18px; }
